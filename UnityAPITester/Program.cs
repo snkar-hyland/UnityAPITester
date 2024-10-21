@@ -1,7 +1,9 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Linq.Expressions;
 using System.Text;
+using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 
 using WV = Hyland.Unity.WorkView;
@@ -16,7 +18,8 @@ namespace UnityAPITester
             {
                 var applicationName = "SBPWC-10466";
                 var className = "Project";
-                var relatedClassName = "Milestone";
+                var doModifyAttributeTest = true;
+                var doCreateNewObjectTest = true;
 
                 using (Hyland.Unity.Application app = Hyland.Unity.Application.Connect(Hyland.Unity.Application.CreateOnBaseAuthenticationProperties(ConnectionInfo.AppServerURL, ConnectionInfo.Username, ConnectionInfo.Password, ConnectionInfo.DataSource)))
                 {
@@ -28,10 +31,75 @@ namespace UnityAPITester
 
                     var results = GetFilterQueryResults(wvClass);
 
-                    if(results.Count == 0)
+                    if (results.Count == 0)
                     {
                         Console.WriteLine("No results found");
                     }
+
+                    if (doCreateNewObjectTest)
+                    {
+                        try
+                        {
+                            Console.WriteLine("Creating a new object");
+
+                            var o = wvClass.CreateObject();
+                            var modifier = o.CreateAttributeValueModifier();
+                            var attrs = o.AttributeValues;
+
+                            var changes = new List<(string attributeName, object value, Type t)>();
+
+                            foreach (var av in attrs)
+                            {
+                                Random random = new Random();
+                                switch (av.Attribute.AttributeType)
+                                {
+                                    case WV.AttributeType.Alphanumeric:
+                                        changes.Add((av.Attribute.Name, GetRandomString(random.Next(1, 20)), typeof(string)));
+                                        break;
+                                    case WV.AttributeType.Integer:
+                                        changes.Add((av.Attribute.Name, random.Next(1, 100), typeof(int)));
+                                        break;
+                                    case WV.AttributeType.DateTime:
+                                        changes.Add((av.Attribute.Name, GetRandomDate(), typeof(DateTime)));
+                                        break;
+                                    case WV.AttributeType.Boolean:
+                                        changes.Add((av.Attribute.Name, random.Next(1, 100) % 2 == 0, typeof(bool)));
+                                        break;
+                                    default:
+                                        break;
+                                }
+                            }
+
+                            foreach (var change in changes)
+                            {
+                                if (change.t == typeof(bool))
+                                {
+                                    modifier.SetAttributeValue(change.attributeName, (bool)change.value);
+                                }
+                                else if (change.t == typeof(DateTime))
+                                {
+                                    modifier.SetAttributeValue(change.attributeName, (DateTime)change.value);
+                                }
+                                else if (change.t == typeof(int))
+                                {
+                                    modifier.SetAttributeValue(change.attributeName, (int)change.value);
+                                }
+                                else if (change.t == typeof(string))
+                                {
+                                    modifier.SetAttributeValue(change.attributeName, change.value.ToString());
+                                }
+                            }
+
+                            modifier.ApplyChanges();
+                        }
+                        catch (Exception ex)
+                        {
+                            Console.WriteLine("ERROR");
+                            Console.WriteLine(ex.Message);
+                        }
+                    }
+
+                    results = GetFilterQueryResults(wvClass);
 
                     foreach (var result in results)
                     {
@@ -40,6 +108,49 @@ namespace UnityAPITester
                         if (wvObject != null)
                         {
                             EnumerateAttributeValuesForObject(wvObject);
+
+                            if (doModifyAttributeTest)
+                            {
+                                try
+                                {
+                                    var targetAttributeName = "Name";
+                                    var targetAttribute = wvObject.AttributeValues.FirstOrDefault(av => av.Attribute.Name == targetAttributeName);
+                                    if (targetAttribute != null)
+                                    {
+                                        var updatedTargetAttributeValue = string.Empty;
+
+                                        if(targetAttribute.HasValue)
+                                        {
+                                            var counter = 0;
+                                            var targetAttrValue = targetAttribute.Value;
+                                            Match match = Regex.Match(targetAttrValue.ToString(), @"(\d+)$");
+                                            if (match.Success)
+                                            {
+                                                counter = int.Parse(match.Value);
+                                                updatedTargetAttributeValue = $"{targetAttrValue.ToString().TrimEnd(match.Value.ToCharArray())}{++counter}";
+                                            }
+                                            else
+                                            {
+                                                updatedTargetAttributeValue = $"{targetAttrValue}_Updated";
+
+                                            }
+                                        }
+                                        else
+                                        {
+                                            updatedTargetAttributeValue = $"{targetAttributeName}_Updated";
+                                        }
+                                        
+                                        var modifier = wvObject.CreateAttributeValueModifier();
+                                        modifier.SetAttributeValue(targetAttributeName, $"{updatedTargetAttributeValue}");
+                                        modifier.ApplyChanges();
+                                    }
+                                }
+                                catch (Exception ex)
+                                {
+                                    Console.WriteLine("ERROR");
+                                    Console.WriteLine(ex.Message);
+                                }
+                            }
                         }
                     }
                 }
@@ -115,6 +226,29 @@ namespace UnityAPITester
             {
                 Console.WriteLine($"Attribute: '{av.Attribute.Name}' :: Value: '{av.Value}'");
             }
+        }
+
+        private static string GetRandomString(int length)
+        {
+            const string chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+            Random random = new Random();
+            StringBuilder result = new StringBuilder(length);
+
+            for (int i = 0; i < length; i++)
+            {
+                result.Append(chars[random.Next(chars.Length)]);
+            }
+
+            return result.ToString();
+        }
+
+        private static DateTime GetRandomDate()
+        {
+            DateTime start = new DateTime(1995, 1, 1);
+            DateTime end = DateTime.Now;
+            Random random = new Random();
+            int range = (end - start).Days;
+            return start.AddDays(random.Next(range));
         }
     }
 }
