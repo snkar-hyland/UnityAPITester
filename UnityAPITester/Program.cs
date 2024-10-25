@@ -5,6 +5,9 @@ using System.Linq.Expressions;
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
+using Bogus;
+
+using static System.Net.Mime.MediaTypeNames;
 
 using WV = Hyland.Unity.WorkView;
 
@@ -16,9 +19,9 @@ namespace UnityAPITester
         {
             try
             {
-                var applicationName = "SBPWC-10466";
-                var className = "Project";
-                var doModifyAttributeTest = true;
+                var applicationName = "SBPWC-10488";
+                var className = "Item";
+                var doModifyAttributeTest = false;
                 var doCreateNewObjectTest = true;
 
                 using (Hyland.Unity.Application app = Hyland.Unity.Application.Connect(Hyland.Unity.Application.CreateOnBaseAuthenticationProperties(ConnectionInfo.AppServerURL, ConnectionInfo.Username, ConnectionInfo.Password, ConnectionInfo.DataSource)))
@@ -29,130 +32,166 @@ namespace UnityAPITester
                     var wvApp = applicationAndClass.WVApplication;
                     var wvClass = applicationAndClass.WVClass;
 
-                    var results = GetFilterQueryResults(wvClass);
-
-                    if (results.Count == 0)
+                    if (wvApp == null || wvClass == null)
                     {
-                        Console.WriteLine("No results found");
+                        Console.WriteLine("Application or Class not found");
+                        return;
                     }
 
-                    if (doCreateNewObjectTest)
+                    for (int i = 0; i < 50; i++)
                     {
-                        try
+                        Console.WriteLine($"Creating new object: {i}");
+                        var p = GenerateProductData();
+                        var o = wvClass.CreateObject();
+                        var modifier = o.CreateAttributeValueModifier();
+                        foreach (var attr in o.AttributeValues)
                         {
-                            Console.WriteLine("Creating a new object");
-
-                            var o = wvClass.CreateObject();
-                            var modifier = o.CreateAttributeValueModifier();
-                            var attrs = o.AttributeValues;
-
-                            var changes = new List<(string attributeName, object value, Type t)>();
-
-                            foreach (var av in attrs)
+                            switch (attr.Name.ToUpper())
                             {
-                                Random random = new Random();
-                                switch (av.Attribute.AttributeType)
-                                {
-                                    case WV.AttributeType.Alphanumeric:
-                                        changes.Add((av.Attribute.Name, GetRandomString(random.Next(1, 20)), typeof(string)));
-                                        break;
-                                    case WV.AttributeType.Integer:
-                                        changes.Add((av.Attribute.Name, random.Next(1, 100), typeof(int)));
-                                        break;
-                                    case WV.AttributeType.DateTime:
-                                        changes.Add((av.Attribute.Name, GetRandomDate(), typeof(DateTime)));
-                                        break;
-                                    case WV.AttributeType.Boolean:
-                                        changes.Add((av.Attribute.Name, random.Next(1, 100) % 2 == 0, typeof(bool)));
-                                        break;
-                                    default:
-                                        break;
-                                }
+                                case "ITEMNUMBER":
+                                    modifier.SetAttributeValue(attr.Name, i);
+                                    break;
+                                case "ITEMNAME":
+                                    modifier.SetAttributeValue(attr.Name, p.ProductName);
+                                    break;
+                                case "ITEMSHORTDESCRIPTION":
+                                    modifier.SetAttributeValue(attr.Name, p.ProductShortDescription);
+                                    break;
+                                case "ITEMDESCRIPTION":
+                                    modifier.SetAttributeValue(attr.Name, p.ProductDescription);
+                                    break;
+                                default:
+                                    break;
                             }
-
-                            foreach (var change in changes)
-                            {
-                                if (change.t == typeof(bool))
-                                {
-                                    modifier.SetAttributeValue(change.attributeName, (bool)change.value);
-                                }
-                                else if (change.t == typeof(DateTime))
-                                {
-                                    modifier.SetAttributeValue(change.attributeName, (DateTime)change.value);
-                                }
-                                else if (change.t == typeof(int))
-                                {
-                                    modifier.SetAttributeValue(change.attributeName, (int)change.value);
-                                }
-                                else if (change.t == typeof(string))
-                                {
-                                    modifier.SetAttributeValue(change.attributeName, change.value.ToString());
-                                }
-                            }
-
-                            modifier.ApplyChanges();
                         }
-                        catch (Exception ex)
-                        {
-                            Console.WriteLine("ERROR");
-                            Console.WriteLine(ex.Message);
-                        }
+
+                        modifier.ApplyChanges();
                     }
 
-                    results = GetFilterQueryResults(wvClass);
+                    //var results = GetFilterQueryResults(wvClass);
 
-                    foreach (var result in results)
-                    {
-                        Console.WriteLine($"Object ID: '{result.ObjectID}'");
-                        var wvObject = LoadObjectByID(result.ObjectID, wvClass);
-                        if (wvObject != null)
-                        {
-                            EnumerateAttributeValuesForObject(wvObject);
+                    //if (results.Count == 0)
+                    //{
+                    //    Console.WriteLine("No results found");
+                    //}
 
-                            if (doModifyAttributeTest)
-                            {
-                                try
-                                {
-                                    var targetAttributeName = "Name";
-                                    var targetAttribute = wvObject.AttributeValues.FirstOrDefault(av => av.Attribute.Name == targetAttributeName);
-                                    if (targetAttribute != null)
-                                    {
-                                        var updatedTargetAttributeValue = string.Empty;
+                    //if (doCreateNewObjectTest)
+                    //{
+                    //    try
+                    //    {
+                    //        Console.WriteLine("Creating a new object");
 
-                                        if(targetAttribute.HasValue)
-                                        {
-                                            var counter = 0;
-                                            var targetAttrValue = targetAttribute.Value;
-                                            Match match = Regex.Match(targetAttrValue.ToString(), @"(\d+)$");
-                                            if (match.Success)
-                                            {
-                                                counter = int.Parse(match.Value);
-                                                updatedTargetAttributeValue = $"{targetAttrValue.ToString().TrimEnd(match.Value.ToCharArray())}{++counter}";
-                                            }
-                                            else
-                                            {
-                                                updatedTargetAttributeValue = $"{targetAttrValue}_Updated";
+                    //        var o = wvClass.CreateObject();
+                    //        var modifier = o.CreateAttributeValueModifier();
+                    //        var attrs = o.AttributeValues;
 
-                                            }
-                                        }
-                                        else
-                                        {
-                                            updatedTargetAttributeValue = $"{targetAttributeName}_Updated";
-                                        }
-                                        
-                                        var modifier = wvObject.CreateAttributeValueModifier();
-                                        modifier.SetAttributeValue(targetAttributeName, $"{updatedTargetAttributeValue}");
-                                        modifier.ApplyChanges();
-                                    }
-                                }
-                                catch (Exception ex)
-                                {
-                                    Console.WriteLine("ERROR");
-                                    Console.WriteLine(ex.Message);
-                                }
-                            }
-                        }
-                    }
+                    //        var changes = new List<(string attributeName, object value, Type t)>();
+
+                    //        foreach (var av in attrs)
+                    //        {
+                    //            Random random = new Random();
+                    //            switch (av.Attribute.AttributeType)
+                    //            {
+                    //                case WV.AttributeType.Alphanumeric:
+                    //                    changes.Add((av.Attribute.Name, GetRandomString(random.Next(1, 20)), typeof(string)));
+                    //                    break;
+                    //                case WV.AttributeType.Integer:
+                    //                    changes.Add((av.Attribute.Name, random.Next(1, 100), typeof(int)));
+                    //                    break;
+                    //                case WV.AttributeType.DateTime:
+                    //                    changes.Add((av.Attribute.Name, GetRandomDate(), typeof(DateTime)));
+                    //                    break;
+                    //                case WV.AttributeType.Boolean:
+                    //                    changes.Add((av.Attribute.Name, random.Next(1, 100) % 2 == 0, typeof(bool)));
+                    //                    break;
+                    //                default:
+                    //                    break;
+                    //            }
+                    //        }
+
+                    //        foreach (var change in changes)
+                    //        {
+                    //            if (change.t == typeof(bool))
+                    //            {
+                    //                modifier.SetAttributeValue(change.attributeName, (bool)change.value);
+                    //            }
+                    //            else if (change.t == typeof(DateTime))
+                    //            {
+                    //                modifier.SetAttributeValue(change.attributeName, (DateTime)change.value);
+                    //            }
+                    //            else if (change.t == typeof(int))
+                    //            {
+                    //                modifier.SetAttributeValue(change.attributeName, (int)change.value);
+                    //            }
+                    //            else if (change.t == typeof(string))
+                    //            {
+                    //                modifier.SetAttributeValue(change.attributeName, change.value.ToString());
+                    //            }
+                    //        }
+
+                    //        modifier.ApplyChanges();
+                    //    }
+                    //    catch (Exception ex)
+                    //    {
+                    //        Console.WriteLine("ERROR");
+                    //        Console.WriteLine(ex.Message);
+                    //    }
+                    //}
+
+                    //results = GetFilterQueryResults(wvClass);
+
+                    //foreach (var result in results)
+                    //{
+                    //    Console.WriteLine($"Object ID: '{result.ObjectID}'");
+                    //    var wvObject = LoadObjectByID(result.ObjectID, wvClass);
+                    //    if (wvObject != null)
+                    //    {
+                    //        EnumerateAttributeValuesForObject(wvObject);
+
+                    //        if (doModifyAttributeTest)
+                    //        {
+                    //            try
+                    //            {
+                    //                var targetAttributeName = "Name";
+                    //                var targetAttribute = wvObject.AttributeValues.FirstOrDefault(av => av.Attribute.Name == targetAttributeName);
+                    //                if (targetAttribute != null)
+                    //                {
+                    //                    var updatedTargetAttributeValue = string.Empty;
+
+                    //                    if(targetAttribute.HasValue)
+                    //                    {
+                    //                        var counter = 0;
+                    //                        var targetAttrValue = targetAttribute.Value;
+                    //                        Match match = Regex.Match(targetAttrValue.ToString(), @"(\d+)$");
+                    //                        if (match.Success)
+                    //                        {
+                    //                            counter = int.Parse(match.Value);
+                    //                            updatedTargetAttributeValue = $"{targetAttrValue.ToString().TrimEnd(match.Value.ToCharArray())}{++counter}";
+                    //                        }
+                    //                        else
+                    //                        {
+                    //                            updatedTargetAttributeValue = $"{targetAttrValue}_Updated";
+
+                    //                        }
+                    //                    }
+                    //                    else
+                    //                    {
+                    //                        updatedTargetAttributeValue = $"{targetAttributeName}_Updated";
+                    //                    }
+
+                    //                    var modifier = wvObject.CreateAttributeValueModifier();
+                    //                    modifier.SetAttributeValue(targetAttributeName, $"{updatedTargetAttributeValue}");
+                    //                    modifier.ApplyChanges();
+                    //                }
+                    //            }
+                    //            catch (Exception ex)
+                    //            {
+                    //                Console.WriteLine("ERROR");
+                    //                Console.WriteLine(ex.Message);
+                    //            }
+                    //        }
+                    //    }
+                    //}
                 }
 
                 Console.WriteLine(string.Format("[{0}] Disconnected", DateTime.Now));
@@ -164,6 +203,23 @@ namespace UnityAPITester
                 Console.Write(string.Format("[{0}] Press any key to exit", DateTime.Now));
                 Console.ReadLine();
             }
+        }
+
+        private static Product GenerateProductData()
+        {
+            var shortDescription = new Faker().Lorem.Sentence(70, 4);
+            if(shortDescription.Length > 280)
+            {
+                shortDescription = shortDescription.Substring(0, 280);
+            }
+            var description = new Faker().Lorem.Paragraph(10);
+
+            var product = new Faker<Product>()
+                .RuleFor(p => p.ProductName, f => f.Commerce.ProductName())
+                .RuleFor(p => p.ProductShortDescription, f => shortDescription)
+                .RuleFor(p => p.ProductDescription, f => description);
+
+            return product.Generate();
         }
 
         private static (WV.Application WVApplication, WV.Class WVClass) GetApplicationAndClass(Hyland.Unity.Application app, string applicationName, string className)
