@@ -8,9 +8,9 @@ namespace UnityAPITester
 {
     internal class Product
     {
-        public int ProductNumber { get; set; }
-        public string ProductName { get; set; }
-        public string ProductShortDescription { get; set; }
-        public string ProductDescription { get; set; }
+        public int ProductID { get; set; }
+        public string Name { get; set; }
+        public string Description { get; set; }
+        public int Price { get; set; }
     }
 }

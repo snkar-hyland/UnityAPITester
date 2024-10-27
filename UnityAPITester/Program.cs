@@ -19,8 +19,8 @@ namespace UnityAPITester
         {
             try
             {
-                var applicationName = "SBPWC-10488";
-                var className = "Item";
+                var applicationName = "Order Inventory";
+                var className = "Product";
                 var doModifyAttributeTest = false;
                 var doCreateNewObjectTest = true;
 
@@ -48,17 +48,17 @@ namespace UnityAPITester
                         {
                             switch (attr.Name.ToUpper())
                             {
-                                case "ITEMNUMBER":
-                                    modifier.SetAttributeValue(attr.Name, i);
+                                case "PRODUCTID":
+                                    modifier.SetAttributeValue(attr.Name, ++i);
                                     break;
-                                case "ITEMNAME":
-                                    modifier.SetAttributeValue(attr.Name, p.ProductName);
+                                case "NAME":
+                                    modifier.SetAttributeValue(attr.Name, p.Name);
                                     break;
-                                case "ITEMSHORTDESCRIPTION":
-                                    modifier.SetAttributeValue(attr.Name, p.ProductShortDescription);
+                                case "DESCRIPTION":
+                                    modifier.SetAttributeValue(attr.Name, p.Description);
                                     break;
-                                case "ITEMDESCRIPTION":
-                                    modifier.SetAttributeValue(attr.Name, p.ProductDescription);
+                                case "PRICE":
+                                    modifier.SetAttributeValue(attr.Name, p.Price);
                                     break;
                                 default:
                                     break;
@@ -207,17 +207,10 @@ namespace UnityAPITester
 
         private static Product GenerateProductData()
         {
-            var shortDescription = new Faker().Lorem.Sentence(70, 4);
-            if(shortDescription.Length > 280)
-            {
-                shortDescription = shortDescription.Substring(0, 280);
-            }
-            var description = new Faker().Lorem.Paragraph(10);
-
             var product = new Faker<Product>()
-                .RuleFor(p => p.ProductName, f => f.Commerce.ProductName())
-                .RuleFor(p => p.ProductShortDescription, f => shortDescription)
-                .RuleFor(p => p.ProductDescription, f => description);
+                .RuleFor(p => p.Name, f => f.Commerce.ProductName())
+                .RuleFor(p => p.Description, f => f.Commerce.ProductAdjective())
+                .RuleFor(p => p.Price, f => f.Random.Number(1, 1000));
 
             return product.Generate();
         }
