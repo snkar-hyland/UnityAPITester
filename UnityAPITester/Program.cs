@@ -5,7 +5,11 @@ using System.Linq.Expressions;
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
+
 using Bogus;
+using Bogus.DataSets;
+
+using Hyland.Unity.WorkView;
 
 using static System.Net.Mime.MediaTypeNames;
 
@@ -15,16 +19,17 @@ namespace UnityAPITester
 {
     internal static class Program
     {
+        static Dictionary<string, List<long>> relatedClassIDList = new Dictionary<string, List<long>>();
         static void Main(string[] args)
         {
             try
             {
+                int noOfNewObjectsToCreate = 999;
                 var applicationName = "Order Inventory";
-                var className = "Product";
+                var className = "Order";
                 var doModifyAttributeTest = false;
                 var doCreateNewObjectTest = true;
-
-                using (Hyland.Unity.Application app = Hyland.Unity.Application.Connect(Hyland.Unity.Application.CreateOnBaseAuthenticationProperties(ConnectionInfo.AppServerURL, ConnectionInfo.Username, ConnectionInfo.Password, ConnectionInfo.DataSource)))
+                using (Hyland.Unity.Application app = EstablishConnection(applicationName, className))
                 {
                     Console.WriteLine(string.Format("[{0}] Connected", DateTime.Now));
 
@@ -38,36 +43,104 @@ namespace UnityAPITester
                         return;
                     }
 
-                    for (int i = 0; i < 50; i++)
+                    for (int i = 0; i < noOfNewObjectsToCreate; i++)
                     {
                         Console.WriteLine($"Creating new object: {i}");
-                        var p = GenerateProductData();
                         var o = wvClass.CreateObject();
                         var modifier = o.CreateAttributeValueModifier();
-                        foreach (var attr in o.AttributeValues)
+
+                        string IdentifierAttributeName = "OrderID";
+
+                        var relatedClassForCustomer = wvApp.Classes.Find("Customer");
+                        var dfq = relatedClassForCustomer.CreateDynamicFilterQuery();
+                        dfq.AddFilterColumn("ObjectID");
+                        dfq.AddConstraint("CustomerID", Operator.Equal, 100);
+                        var customer = dfq.Execute(1).First();
+
+                        Dictionary<string, string> relationAttributeResolver = new Dictionary<string, string>
                         {
-                            switch (attr.Name.ToUpper())
+                            { "Customer",  customer.ObjectID.ToString()},
+                            { "Product", "Random" }
+                        };
+
+                        var attributeNameValueMap = GenerateRandomObjectData(wvClass, IdentifierAttributeName, relationAttributeResolver);
+                        foreach (var attr in wvClass.Attributes)
+                        {
+                            var attributeName = attr.Name;
+                            if(attributeNameValueMap.ContainsKey(attributeName))
                             {
-                                case "PRODUCTID":
-                                    modifier.SetAttributeValue(attr.Name, ++i);
-                                    break;
-                                case "NAME":
-                                    modifier.SetAttributeValue(attr.Name, p.Name);
-                                    break;
-                                case "DESCRIPTION":
-                                    modifier.SetAttributeValue(attr.Name, p.Description);
-                                    break;
-                                case "PRICE":
-                                    modifier.SetAttributeValue(attr.Name, p.Price);
-                                    break;
-                                default:
-                                    break;
+                                var targetAttributeValue = attributeNameValueMap[attributeName];
+
+                                switch (attr.AttributeType)
+                                {
+                                    case WV.AttributeType.Integer:
+                                        modifier.SetAttributeValue(attr.Name, long.Parse(targetAttributeValue.ToString()));
+                                        break;
+                                    case WV.AttributeType.Decimal:
+                                    case WV.AttributeType.Currency:
+                                        modifier.SetAttributeValue(attr.Name, decimal.Parse(targetAttributeValue.ToString()));
+                                        break;
+                                    case WV.AttributeType.Float:
+                                        modifier.SetAttributeValue(attr.Name, double.Parse(targetAttributeValue.ToString()));
+                                        break;
+                                    case WV.AttributeType.Date:
+                                    case WV.AttributeType.DateTime:
+                                        modifier.SetAttributeValue(attr.Name, ParseDateTimeValue(targetAttributeValue.ToString()));
+                                        break;
+                                    case WV.AttributeType.Alphanumeric:
+                                    case WV.AttributeType.EncryptedAlphanumeric:
+                                    case WV.AttributeType.Text:
+                                    case WV.AttributeType.FormattedText:
+                                        modifier.SetAttributeValue(attr.Name, (string)targetAttributeValue);
+                                        break;
+                                    case WV.AttributeType.Relation:
+                                        modifier.SetAttributeValue(attr, long.Parse(targetAttributeValue.ToString()));
+                                        break;
+                                    case WV.AttributeType.Boolean:
+                                        modifier.SetAttributeValue(attr.Name, bool.Parse(targetAttributeValue.ToString()));
+                                        break;
+                                    default:
+                                        break;
+                                }
                             }
                         }
 
                         modifier.ApplyChanges();
                     }
 
+                    #region Commented Code
+                    //for (int i = 0; i < 50; i++)
+                    //{
+                    //    Console.WriteLine($"Creating new object: {i}");
+                    //    var p = GenerateProductData();
+                    //    var o = wvClass.CreateObject();
+                    //    var modifier = o.CreateAttributeValueModifier();
+                    //    foreach (var attr in o.AttributeValues)
+                    //    {
+                    //        switch (attr.Name.ToUpper())
+                    //        {
+                    //            case "PRODUCTID":
+                    //                modifier.SetAttributeValue(attr.Name, ++i);
+                    //                break;
+                    //            case "NAME":
+                    //                modifier.SetAttributeValue(attr.Name, p.Name);
+                    //                break;
+                    //            case "DESCRIPTION":
+                    //                modifier.SetAttributeValue(attr.Name, p.Description);
+                    //                break;
+                    //            case "PRICE":
+                    //                modifier.SetAttributeValue(attr.Name, p.Price);
+                    //                break;
+                    //            default:
+                    //                break;
+                    //        }
+                    //    }
+
+                    //    modifier.ApplyChanges();
+                    //}
+                    #endregion
+
+                    #region Commented Code
                     //var results = GetFilterQueryResults(wvClass);
 
                     //if (results.Count == 0)
@@ -192,8 +265,8 @@ namespace UnityAPITester
                     //        }
                     //    }
                     //}
+                    #endregion
                 }
-
                 Console.WriteLine(string.Format("[{0}] Disconnected", DateTime.Now));
             }
             finally
@@ -204,6 +277,23 @@ namespace UnityAPITester
                 Console.ReadLine();
             }
         }
+        private static Hyland.Unity.Application EstablishConnection(string applicationName, string className)
+        {
+            Hyland.Unity.Application app = Hyland.Unity.Application.Connect(Hyland.Unity.Application.CreateOnBaseAuthenticationProperties(ConnectionInfo.AppServerURL, ConnectionInfo.Username, ConnectionInfo.Password, ConnectionInfo.DataSource));
+
+            return app;
+        }
+
+        private static DateTime ParseDateTimeValue(string dateTimeValue)
+        {
+            DateTime result = DateTime.MinValue;
+            if (DateTime.TryParse(dateTimeValue, out DateTime parsedDateTime))
+            {
+                result = parsedDateTime;
+            }
+
+            return result;
+        }
 
         private static Product GenerateProductData()
         {
@@ -213,6 +303,96 @@ namespace UnityAPITester
                 .RuleFor(p => p.Price, f => f.Random.Number(1, 1000));
 
             return product.Generate();
+        }
+
+        private static Dictionary<string, object> GenerateRandomObjectData(WV.Class wvClass, string IdentifierAttributeName, Dictionary<string, string> relationAttributeResolver)
+        {
+            Dictionary<string, object> attributeValues = new Dictionary<string, object>();
+            long maxID = 1;
+            var existingObjectList = GetMaxID(wvClass, "OrderID");
+            if(existingObjectList.Count > 0)
+            {
+                var existingMaxID = existingObjectList[0].GetFilterColumnValue(IdentifierAttributeName).IntegerValue;
+                maxID = existingMaxID + 1;
+            }
+
+            attributeValues[IdentifierAttributeName] = maxID;
+
+            var attributes = wvClass.Attributes;
+            if (attributes.Count() > 0)
+            {
+                var targetAttributeValue = string.Empty;
+                var faker = new Faker("en");
+                foreach (var attribute in attributes)
+                {
+                    switch (attribute.AttributeType)
+                    {
+                        case WV.AttributeType.Integer:
+                            if (!string.Equals(attribute.Name, IdentifierAttributeName, StringComparison.OrdinalIgnoreCase))
+                                targetAttributeValue = faker.Random.Number(1, 1000).ToString();
+                            else
+                                continue;
+                            break;
+                        case WV.AttributeType.Decimal:
+                        case WV.AttributeType.Currency:
+                            targetAttributeValue = faker.Random.Decimal(1, 1000).ToString();
+                            break;
+                        case WV.AttributeType.Float:
+                            targetAttributeValue = faker.Random.Float(1, 1000).ToString();
+                            break;
+                        case WV.AttributeType.Date:
+                        case WV.AttributeType.DateTime:
+                            targetAttributeValue = faker.Date.Past().ToString();
+                            break;
+                        case WV.AttributeType.Alphanumeric:
+                        case WV.AttributeType.EncryptedAlphanumeric:
+                            targetAttributeValue = faker.Lorem.Sentence();
+                            break;
+                        case WV.AttributeType.Text:
+                        case WV.AttributeType.FormattedText:
+                            targetAttributeValue = faker.Lorem.Paragraph();
+                            break;
+                        case WV.AttributeType.Relation:
+                            var relatedClassName = attribute.RelatedClass.Name;
+                            if (relationAttributeResolver.ContainsKey(relatedClassName))
+                            {
+                                var resolutionMode = relationAttributeResolver[relatedClassName];
+                                if(string.Equals(resolutionMode, "Random", StringComparison.OrdinalIgnoreCase))
+                                {
+                                    if (!relatedClassIDList.ContainsKey(relatedClassName))
+                                    {
+                                        var IDList = GetIDListForClass(attribute.RelatedClass);
+                                        if (IDList.Count > 0)
+                                        {
+                                            relatedClassIDList[relatedClassName] = IDList.Select(o => o.ObjectID).ToList();
+                                        }
+
+                                    }
+
+                                    List<long> classIDList = relatedClassIDList[relatedClassName];
+                                    Random random = new Random();
+                                    int randomIndex = random.Next(classIDList.Count);
+                                    long randomRelatedClassID = classIDList[randomIndex];
+                                    targetAttributeValue = randomRelatedClassID.ToString();
+                                }
+                                else
+                                {
+                                    targetAttributeValue = relationAttributeResolver[relatedClassName];
+                                }
+                            }
+                            break;
+                        case WV.AttributeType.Boolean:
+                            targetAttributeValue = faker.Random.Bool().ToString();
+                            break;
+                        default:
+                            break;
+                    }
+
+                    attributeValues[attribute.Name] = targetAttributeValue;
+                }
+            }
+
+            return attributeValues;
         }
 
         private static (WV.Application WVApplication, WV.Class WVClass) GetApplicationAndClass(Hyland.Unity.Application app, string applicationName, string className)
@@ -241,6 +421,45 @@ namespace UnityAPITester
             try
             {
                 var dfq = wvClass.CreateDynamicFilterQuery();
+                results = dfq.Execute(int.MaxValue);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("ERROR");
+                Console.WriteLine(ex.Message);
+            }
+
+            return results;
+        }
+
+        private static WV.FilterQueryResultItemList GetIDListForClass(WV.Class wvClass)
+        {
+            WV.FilterQueryResultItemList results = null;
+
+            try
+            {
+                var dfq = wvClass.CreateDynamicFilterQuery();
+                dfq.AddFilterColumn("ObjectID");
+                results = dfq.Execute(int.MaxValue);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("ERROR");
+                Console.WriteLine(ex.Message);
+            }
+
+            return results;
+        }
+
+        private static WV.FilterQueryResultItemList GetMaxID(WV.Class wvClass, string IdentifierAttributeName)
+        {
+            WV.FilterQueryResultItemList results = null;
+
+            try
+            {
+                var dfq = wvClass.CreateDynamicFilterQuery();
+                dfq.AddFilterColumn(IdentifierAttributeName);
+                dfq.AddSort(IdentifierAttributeName, WV.SortType.DESCENDING);
                 results = dfq.Execute(int.MaxValue);
             }
             catch (Exception ex)
